@@ -43,7 +43,7 @@ class Checker(ABC):
 
         self.captures = queries.captures(self.tree.root_node)
 
-    def walk_tree(self, node: Node | None = None) -> Generator[Node, None, None]:
+    def walk_tree(self, node: Node | None = None) -> Generator[Node | None, None, None]:
         """
         Helper function to traverse the syntax tree in a depth-first manner, yielding each node.
         Traversing the tree is parser/language agnostic, 
@@ -128,13 +128,16 @@ class CChecker(Checker):
 
         if "expression.paranthesis" in self.captures:
             for m in self.captures["expression.paranthesis"]:
-                if m.parent.type in {
+                if m.parent is not None and m.parent.type in {
                     "if_statement",
                     "for_statement",
                     "while_statement",
                     "do_statement",
                     "switch_statement",
                 }:
+                    if m.prev_sibling is None:
+                        continue
+                        
                     self.style_assert(
                         (m.start_point.column - m.prev_sibling.end_point.column) != 1,
                         self.error(
@@ -196,35 +199,37 @@ class CChecker(Checker):
         
         """
 
-        consequence: Node = node.child_by_field_name("consequence")
+        consequence: Node | None = node.child_by_field_name("consequence")
         alternative: Node | None = node.child_by_field_name("alternative")
 
-        # Open braket should be on separate line
-        self.style_assert(
-            consequence.start_point.row == node.start_point.row,
-            self.error(consequence.start_point, "Left bracket not on separate line")
-        )
+        if consequence is not None:
 
-        # Open braket should be indented by two whitespaces
-        self.style_assert(
-            consequence.children[0].start_point.column != indent + 2,
-            self.error(consequence.start_point, "Wrong indentation")
-        )
+            # Open braket should be on separate line
+            self.style_assert(
+                consequence.start_point.row == node.start_point.row,
+                self.error(consequence.start_point, "Left bracket not on separate line")
+            )
 
-        for n in consequence.named_children:
-            self.__check_indents(indent + 4, n)
+            # Open braket should be indented by two whitespaces
+            self.style_assert(
+                consequence.children[0].start_point.column != indent + 2,
+                self.error(consequence.start_point, "Wrong indentation")
+            )
 
-        # Close braket should be on separate line
-        self.style_assert(
-            consequence.children[-1].start_point.row == consequence.children[-2].start_point.row,
-            self.error(consequence.start_point, "Left bracket not on separate line")
-        )
+            for n in consequence.named_children:
+                self.__check_indents(indent + 4, n)
 
-        # Close braket should be indented by two whitespaces
-        self.style_assert(
-            consequence.children[-1].start_point.column != indent + 2,
-            self.error(consequence.children[-1].start_point, "Wrong indentation")
-        )
+            # Close braket should be on separate line
+            self.style_assert(
+                consequence.children[-1].start_point.row == consequence.children[-2].start_point.row,
+                self.error(consequence.start_point, "Left bracket not on separate line")
+            )
+
+            # Close braket should be indented by two whitespaces
+            self.style_assert(
+                consequence.children[-1].start_point.column != indent + 2,
+                self.error(consequence.children[-1].start_point, "Wrong indentation")
+            )
 
         if alternative is not None:
 
@@ -243,7 +248,13 @@ class CChecker(Checker):
 
     def  __check_indents_for_statement(self, indent: int, node: Node) -> None:
 
-        body: Node = node.child_by_field_name("body")
+        body: Node | None = node.child_by_field_name("body")
+        
+        if body is None:
+            return
+        
+        if body.prev_sibling is None:
+            return
 
         if body.type == "compound_statement":
 
@@ -288,7 +299,13 @@ class CChecker(Checker):
 
     def __check_indents_while_statement(self, indent: int, node: Node) -> None:
 
-        body: Node = node.child_by_field_name("body")
+        body: Node | None = node.child_by_field_name("body")
+        
+        if body is None:
+            return
+        
+        if body.prev_sibling is None:
+            return
 
         # Open braket should be on separate line
         self.style_assert(
@@ -319,7 +336,13 @@ class CChecker(Checker):
 
     def __check_indents_switch_statement(self, indent: int, node: Node) -> None:
 
-        body: Node = node.child_by_field_name("body")
+        body: Node | None = node.child_by_field_name("body")
+        
+        if body is None:
+            return
+
+        if body.prev_sibling is None:
+            return
 
         # Open braket should be on separate line
         self.style_assert(
@@ -361,6 +384,10 @@ class CChecker(Checker):
         )
 
         if body.type == "compound_statement":
+            
+            if body.prev_sibling is None:
+                return
+            
             # Open braket should be on separate line
             self.style_assert(
                 body.start_point.row == body.prev_sibling.start_point.row,
@@ -392,26 +419,32 @@ class CChecker(Checker):
                 self.__check_indents(indent + 2, n)
 
     def __check_whitespaces(self, node: Node) -> None:
+        
+        if node.text is not None:
+            node_text: str = node.text.decode()
+        else:
+            return
+
         self.style_assert(
-            bool(re.search(r"\(\s+", node.text.decode())),
+            bool(re.search(r"\(\s+", node_text)),
             self.error(node.start_point, "Whitespace after open paranthesis")
         )
 
         self.style_assert(
-            bool(re.search(r"\s+\)", node.text.decode())),
+            bool(re.search(r"\s+\)", node_text)),
             self.error(node.start_point, "Whitespace before close paranthesis")
         )
 
         self.style_assert(
             bool(
-                re.search(r"(?<!\s)(\|\||&&|<<=|>>=|[+\*\/%&|^<>!=]=)", node.text.decode())
+                re.search(r"(?<!\s)(\|\||&&|<<=|>>=|[+\*\/%&|^<>!=]=)", node_text)
             ),
             self.error(node.start_point, "Missing whitespaces before operator")
         )
 
         self.style_assert(
             bool(
-                re.search(r"(\|\||&&|<<=|>>=|[+\*\/%&|^<>!=]=)(?!\s)", node.text.decode())
+                re.search(r"(\|\||&&|<<=|>>=|[+\*\/%&|^<>!=]=)(?!\s)", node_text)
             ),
             self.error(node.start_point, "Missing whitespaces after operator")
         )
@@ -420,7 +453,7 @@ class CChecker(Checker):
             bool(
                 re.search(
                     r",(?!\s)", 
-                    re.sub(r"([\"\'].*?\")", "", node.text.decode())
+                    re.sub(r"([\"\'].*?\")", "", node_text)
                 )
             ),
             self.error(node.start_point, "Missing whitespaces after comma")
