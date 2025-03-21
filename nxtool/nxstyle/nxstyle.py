@@ -151,6 +151,10 @@ class CChecker(Checker):
         if "list.arguments" in self.captures:
             for m in self.captures["list.arguments"]:
                 self.__check_whitespaces(m)
+                
+        if "structs" in self.captures:
+            for m in self.captures["structs"]:
+                self.__check_structs(m)
 
     def __check_indents(self, indent: int, node: Node):
         """
@@ -426,10 +430,36 @@ class CChecker(Checker):
 
         self.style_assert(
             bool(
-                re.search(
-                    r",(?!\s)", 
-                    re.sub(r"([\"\'].*?\")", "", node_text)
-                )
+                re.search(r",(?!\s)", re.sub(r"([\"\'].*?\")", "", node_text))
             ),
             self.error(node.start_point, "Missing whitespaces after comma")
         )
+        
+    def __check_structs(self, node: Node):
+        
+        name: Node | None = node.child_by_field_name("name")
+        body: Node | None = node.child_by_field_name("body")
+        indent: int = node.start_point.column
+            
+        if body is None or body.prev_sibling is None:
+            return
+        
+        if name is None:
+            self.style_assert(
+                True,
+                self.error(node.start_point, "Avoid anonymous structs")
+            )
+        else:
+            self.style_assert(
+                not bool(re.search(r".*_s$", name.text.decode())),
+                self.error(node.start_point, "Struct name should end in \"_s\"")
+            )
+
+        # Open braket should be on separate line
+        self.style_assert(
+            body.start_point.row == body.prev_sibling.start_point.row,
+            self.error(body.start_point, "Left bracket not on separate line")
+        )
+        
+        self.__check_body(indent, body)
+        
