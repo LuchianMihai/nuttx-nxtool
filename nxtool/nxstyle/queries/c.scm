@@ -1,6 +1,6 @@
 ; function definitions and body
-(
-    function_definition
+(function_definition
+    
     (storage_class_specifier)?
     type: (primitive_type)
     declarator: (function_declarator)
@@ -12,3 +12,10 @@
 (argument_list) @list.arguments
 
 (struct_specifier) @structs
+
+(enum_specifier) @enums
+
+(declaration
+	_+
+	(pointer_declarator)
+) @declarator.pointer

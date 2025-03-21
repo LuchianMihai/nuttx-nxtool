@@ -105,7 +105,7 @@ class CChecker(Checker):
     Checker class for analyzing and processing syntax trees for c source files.
     """
 
-    def __init__(self, file: Path, scm: str):
+    def __init__(self, file: Path, scm: str, **kwargs):
 
         try:
             with open(file.as_posix(), 'rb') as fd:
@@ -113,6 +113,8 @@ class CChecker(Checker):
         except FileNotFoundError as e:
             print(f"{e}")
             sys.exit(1)
+        
+        self.nuttx_codebase: bool = kwargs.get("nuttx_codebase", True)
 
         lang = get_language('c')
         parser = get_parser('c')
@@ -155,6 +157,14 @@ class CChecker(Checker):
         if "structs" in self.captures:
             for m in self.captures["structs"]:
                 self.__check_structs(m)
+                
+        if "enums" in self.captures:
+            for m in self.captures["enums"]:
+                self.__check_enums(m)
+
+        if self.nuttx_codebase and "declarator.pointer" in self.captures:
+            for m in self.captures["declarator.pointer"]:
+                self.__check_pointer_declarator(m)
 
     def __check_indents(self, indent: int, node: Node):
         """
@@ -169,7 +179,7 @@ class CChecker(Checker):
         :type node: Node 
         """
         match node.type:
-            case "if_statement":
+            case "if_statement" | "else_clause":
                 self.__check_indents_if_statement(indent, node)
             case "for_statement":
                 self.__check_indents_for_statement(indent, node)
@@ -181,13 +191,14 @@ class CChecker(Checker):
                 "return_statement" |
                 "expression_statement" |
                 "declaration" | 
-                "break_statement"
+                "break_statement" |
+                "field_declaration" |
+                "enumerator"
             ):
                 for child in node.named_children:
                     self.__check_indents(indent + 2, child)
             case _:
                 return
-
         self.style_assert(
             node.start_point.column != indent,
             self.error(
@@ -197,39 +208,42 @@ class CChecker(Checker):
         )
         
     def __check_body(self, indent: int, node: Node) -> None:
+        
+        if node.type == "expression_statement":
+            self.__check_indents(indent, node)
+        
+        # Open braket should be on separate line
+        self.style_assert(
+            node.children[0].start_point.row == node.children[1].start_point.row,
+            self.error(node.start_point, "Left bracket not on separate line")
+        )
 
-            # Open braket should be on separate line
-            self.style_assert(
-                node.children[0].start_point.row == node.children[1].start_point.row,
-                self.error(node.start_point, "Left bracket not on separate line")
+        # Open braket should be indented by two whitespaces
+        self.style_assert(
+            node.children[0].start_point.column != indent,
+            self.error(
+                node.start_point,
+                f"Wrong indentation [Expected: {indent} / Actual: {node.children[0].start_point.column}]"
             )
+        )
 
-            # Open braket should be indented by two whitespaces
-            self.style_assert(
-                node.children[0].start_point.column != indent,
-                self.error(
-                    node.start_point,
-                    f"Wrong indentation [Expected: {indent} / Actual: {node.children[0].start_point.column}]"
-                )
+        for n in node.named_children:
+            self.__check_indents(indent + 2, n)
+
+        # Close braket should be on separate line
+        self.style_assert(
+            node.children[-1].start_point.row == node.children[-2].start_point.row,
+            self.error(node.start_point, "Right bracket not on separate line")
+        )
+
+        # Close braket should be indented by two whitespaces
+        self.style_assert(
+            node.children[-1].start_point.column != indent,
+            self.error(
+                node.children[-1].start_point,
+                f"Wrong indentation [Expected: {indent} / Actual: {node.children[-1].start_point.column}]"
             )
-
-            for n in node.named_children:
-                self.__check_indents(indent + 2, n)
-
-            # Close braket should be on separate line
-            self.style_assert(
-                node.children[-1].start_point.row == node.children[-2].start_point.row,
-                self.error(node.start_point, "Right bracket not on separate line")
-            )
-
-            # Close braket should be indented by two whitespaces
-            self.style_assert(
-                node.children[-1].start_point.column != indent,
-                self.error(
-                    node.children[-1].start_point,
-                    f"Wrong indentation [Expected: {indent} / Actual: {node.children[-1].start_point.column}]"
-                )
-            )
+        )
 
     def __check_indents_if_statement(self, indent: int, node: Node) -> None:
         """
@@ -240,12 +254,32 @@ class CChecker(Checker):
         Both consequence and alternative field can hold statemen child nodes
         
         """
+        
+        if node.type == "else_clause":
+
+            second_child: Node = node.children[1]
+
+            if second_child.type != "if_statement":
+                self.__check_body(indent + 2, second_child)
+                return                
+
+            else:
+                # If keyword should be inlined with else keyword
+                self.style_assert(
+                    second_child.start_point.row != node.start_point.row,
+                    self.error(
+                        second_child.start_point,
+                        "If keyword not inlined with else keyword"
+                    )
+                )
+                
+                node = second_child
 
         consequence: Node | None = node.child_by_field_name("consequence")
         alternative: Node | None = node.child_by_field_name("alternative")
 
         if consequence is not None:
-
+        
             # Open braket should be on separate line
             self.style_assert(
                 consequence.start_point.row == node.start_point.row,
@@ -253,24 +287,11 @@ class CChecker(Checker):
             )
             
             self.__check_body(indent + 2, consequence)
-
+    
         if alternative is not None:
-
-            # Else keyword should be aligned with if keyword
-            self.style_assert(
-                alternative.children[0].start_point.column != indent,
-                self.error(
-                    alternative.start_point,
-                    f"Wrong indentation [Expected: {indent} / Actual: {alternative.children[0].start_point.column}]"
-                )
-            )
-
-            if alternative.children[1].type == "if_statement":
-                self.__check_indents_if_statement(indent, alternative.children[1])
-
-            else:
-                # Rest of the else body should be checked for indents
-                self.__check_indents(indent, alternative.children[1])
+            
+            self.__check_indents(indent, alternative)
+                
 
     def  __check_indents_for_statement(self, indent: int, node: Node) -> None:
 
@@ -463,3 +484,36 @@ class CChecker(Checker):
         
         self.__check_body(indent, body)
         
+    def __check_enums(self, node: Node):
+        
+        name: Node | None = node.child_by_field_name("name")
+        body: Node | None = node.child_by_field_name("body")
+        indent: int = node.start_point.column
+            
+        if body is None or body.prev_sibling is None:
+            return
+        
+        if name is None:
+            self.style_assert(
+                True,
+                self.error(node.start_point, "Avoid anonymous enums")
+            )
+        else:
+            self.style_assert(
+                not bool(re.search(r".*_e$", name.text.decode())),
+                self.error(node.start_point, "Struct name should end in \"_e\"")
+            )
+
+        # Open braket should be on separate line
+        self.style_assert(
+            body.start_point.row == body.prev_sibling.start_point.row,
+            self.error(body.start_point, "Left bracket not on separate line")
+        )
+        
+        self.__check_body(indent, body)
+
+    def __check_pointer_declarator(self, node: Node) -> None:
+        self.style_assert(
+            not bool(re.search(r"^(FAR|NEAR|DSEG|CODE).*$", node.text.decode())),
+            self.error(node.start_point, "Pointer qualifier missing")
+        )
