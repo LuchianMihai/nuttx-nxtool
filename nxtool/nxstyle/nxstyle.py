@@ -186,10 +186,48 @@ class CChecker(Checker):
 
         self.style_assert(
             node.start_point.column != indent,
-            self.error(node.start_point, "Wrong indentation")
+            self.error(
+                node.start_point, 
+                f"Wrong indentation [Expected: {indent} / Actual: {node.start_point.column}]"
+            )
         )
+        
+    def __check_body(self, indent: int, node: Node) -> None:
 
-    def  __check_indents_if_statement(self, indent: int, node: Node) -> None:
+            # Open braket should be on separate line
+            self.style_assert(
+                node.children[0].start_point.row == node.children[1].start_point.row,
+                self.error(node.start_point, "Left bracket not on separate line")
+            )
+
+            # Open braket should be indented by two whitespaces
+            self.style_assert(
+                node.children[0].start_point.column != indent,
+                self.error(
+                    node.start_point,
+                    f"Wrong indentation [Expected: {indent} / Actual: {node.children[0].start_point.column}]"
+                )
+            )
+
+            for n in node.named_children:
+                self.__check_indents(indent + 2, n)
+
+            # Close braket should be on separate line
+            self.style_assert(
+                node.children[-1].start_point.row == node.children[-2].start_point.row,
+                self.error(node.start_point, "Right bracket not on separate line")
+            )
+
+            # Close braket should be indented by two whitespaces
+            self.style_assert(
+                node.children[-1].start_point.column != indent,
+                self.error(
+                    node.children[-1].start_point,
+                    f"Wrong indentation [Expected: {indent} / Actual: {node.children[-1].start_point.column}]"
+                )
+            )
+
+    def __check_indents_if_statement(self, indent: int, node: Node) -> None:
         """
         Defered work for if statements.
         If statement node checks should take into account the node structure.
@@ -209,34 +247,18 @@ class CChecker(Checker):
                 consequence.start_point.row == node.start_point.row,
                 self.error(consequence.start_point, "Left bracket not on separate line")
             )
-
-            # Open braket should be indented by two whitespaces
-            self.style_assert(
-                consequence.children[0].start_point.column != indent + 2,
-                self.error(consequence.start_point, "Wrong indentation")
-            )
-
-            for n in consequence.named_children:
-                self.__check_indents(indent + 4, n)
-
-            # Close braket should be on separate line
-            self.style_assert(
-                consequence.children[-1].start_point.row == consequence.children[-2].start_point.row,
-                self.error(consequence.start_point, "Left bracket not on separate line")
-            )
-
-            # Close braket should be indented by two whitespaces
-            self.style_assert(
-                consequence.children[-1].start_point.column != indent + 2,
-                self.error(consequence.children[-1].start_point, "Wrong indentation")
-            )
+            
+            self.__check_body(indent + 2, consequence)
 
         if alternative is not None:
 
             # Else keyword should be aligned with if keyword
             self.style_assert(
                 alternative.children[0].start_point.column != indent,
-                self.error(alternative.start_point, "Wrong indentation")
+                self.error(
+                    alternative.start_point,
+                    f"Wrong indentation [Expected: {indent} / Actual: {alternative.children[0].start_point.column}]"
+                )
             )
 
             if alternative.children[1].type == "if_statement":
@@ -263,27 +285,8 @@ class CChecker(Checker):
                 body.start_point.row == body.prev_sibling.start_point.row,
                 self.error(body.start_point, "Left bracket not on separate line")
             )
-
-            # Open braket should be indented by two whitespaces
-            self.style_assert(
-                body.start_point.column != indent + 2,
-                self.error(body.start_point, "Wrong indentation")
-            )
-
-            for n in body.named_children:
-                self.__check_indents(indent + 4, n)
-
-            # Close braket should be on separate line
-            self.style_assert(
-                body.children[-1].start_point.row == body.children[-2].start_point.row,
-                self.error(body.start_point, "Left bracket not on separate line")
-            )
-
-            # Close braket should be indented by two whitespaces
-            self.style_assert(
-                body.children[-1].start_point.column != indent + 2,
-                self.error(body.children[-1].start_point, "Wrong indentation")
-            )
+            
+            self.__check_body(indent + 2, body)
 
         elif body.type == "expression_statement":
 
@@ -312,27 +315,8 @@ class CChecker(Checker):
             body.start_point.row == body.prev_sibling.start_point.row,
             self.error(body.start_point, "Left bracket not on separate line")
         )
-
-        # Open braket should be indented by two whitespaces
-        self.style_assert(
-            body.start_point.column != indent + 2,
-            self.error(body.start_point, "Wrong indentation")
-        )
-
-        for n in body.named_children:
-            self.__check_indents(indent + 4, n)
-
-        # Close braket should be on separate line
-        self.style_assert(
-            body.children[-1].start_point.row == body.children[-2].start_point.row,
-            self.error(body.children[-1].start_point, "Left bracket not on separate line")
-        )
-
-        # Close braket should be indented by two whitespaces
-        self.style_assert(
-            body.children[-1].start_point.column != indent + 2,
-            self.error(body.children[-1].start_point, "Wrong indentation")
-        )
+        
+        self.__check_body(indent + 2, body)
 
     def __check_indents_switch_statement(self, indent: int, node: Node) -> None:
 
@@ -353,7 +337,10 @@ class CChecker(Checker):
         # Open braket should be indented by two whitespaces
         self.style_assert(
             body.start_point.column != indent + 2,
-            self.error(body.start_point, "Wrong indentation")
+            self.error(
+                body.start_point,
+                f"Wrong indentation [Expected: {indent + 2} / Actual: {body.start_point.column}]"
+            )
         )
 
         case_statements = ( n for n in body.named_children if n.type == "case_statement" )
@@ -369,7 +356,10 @@ class CChecker(Checker):
         # Close braket should be indented by two whitespaces
         self.style_assert(
             body.children[-1].start_point.column != indent + 2,
-            self.error(body.children[-1].start_point, "Wrong indentation")
+            self.error(
+                body.children[-1].start_point,
+                f"Wrong indentation [Expected: {indent + 2} / Actual: {body.children[-1].start_point.column}]"
+            )
         )
 
     def __check_indents_case_statement(self, indent: int, node: Node) -> None:
@@ -380,7 +370,10 @@ class CChecker(Checker):
 
         self.style_assert(
             node.start_point.column != indent,
-            self.error(node.start_point, "Wrong indentation")
+            self.error(
+                node.start_point,
+                f"Wrong indentation [Expected: {indent} / Actual: {node.start_point.column}]"
+            )
         )
 
         if body.type == "compound_statement":
@@ -393,27 +386,9 @@ class CChecker(Checker):
                 body.start_point.row == body.prev_sibling.start_point.row,
                 self.error(body.start_point, "Left bracket not on separate line")
             )
+            
+            self.__check_body(indent + 2, body)
 
-            # Open braket should be indented by two whitespaces
-            self.style_assert(
-                body.start_point.column != indent + 2,
-                self.error(body.start_point, "Wrong indentation")
-            )
-
-            for n in body.named_children:
-                self.__check_indents(indent + 4, n)
-
-            # Close braket should be on separate line
-            self.style_assert(
-                body.children[-1].start_point.row == body.children[-2].start_point.row,
-                self.error(body.start_point, "Left bracket not on separate line")
-            )
-
-            # Close braket should be indented by two whitespaces
-            self.style_assert(
-                body.children[-1].start_point.column != indent + 2,
-                self.error(body.children[-1].start_point, "Wrong indentation")
-            )
         else:
             for n in node.children[offset:]:
                 self.__check_indents(indent + 2, n)

@@ -10,3 +10,5 @@
 (parenthesized_expression) @expression.paranthesis
 
 (argument_list) @list.arguments
+
+(struct_specifier) @structs
