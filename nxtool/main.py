@@ -2,7 +2,6 @@
 import argparse
 from nxtool.cmds.checkpatch import NxCheckpatch
 
-
 class NxTool():
     def __init__(self):
         self.argparser: argparse.ArgumentParser = argparse.ArgumentParser(
