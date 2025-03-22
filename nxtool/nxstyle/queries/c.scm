@@ -12,10 +12,11 @@
 (argument_list) @list.arguments
 
 (struct_specifier) @structs
-
 (enum_specifier) @enums
 
 (declaration
 	_+
 	(pointer_declarator)
 ) @declarator.pointer
+
+(cast_expression) @declarator.pointer

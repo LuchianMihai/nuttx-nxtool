@@ -137,6 +137,7 @@ class CChecker(Checker):
                     "do_statement",
                     "switch_statement",
                 }:
+
                     if m.prev_sibling is None:
                         continue
                         
@@ -162,7 +163,7 @@ class CChecker(Checker):
             for m in self.captures["enums"]:
                 self.__check_enums(m)
 
-        if self.nuttx_codebase and "declarator.pointer" in self.captures:
+        if "declarator.pointer" in self.captures:
             for m in self.captures["declarator.pointer"]:
                 self.__check_pointer_declarator(m)
 
@@ -171,7 +172,7 @@ class CChecker(Checker):
         Internal function that checks the indent depth at node level.
         Just the startpoint is checked, work for specific node should be defered.
         
-        Only the subset of nodes checked here should increase indent depth.
+        :note: Only the subset of nodes checked here should increase indent depth.
 
         :param indent:
         :type indent: int
@@ -208,6 +209,14 @@ class CChecker(Checker):
         )
         
     def __check_body(self, indent: int, node: Node) -> None:
+        """
+
+        :param indent: 
+        :type indent: int
+        :param node:
+        :type node: Node
+        
+        """
         
         if node.type == "expression_statement":
             self.__check_indents(indent, node)
@@ -257,8 +266,10 @@ class CChecker(Checker):
         
         if node.type == "else_clause":
 
+            # Second child should be a if_statement
             second_child: Node = node.children[1]
 
+            # else_clause body can also be a compone_statement or expression_statement
             if second_child.type != "if_statement":
                 self.__check_body(indent + 2, second_child)
                 return                
@@ -290,6 +301,8 @@ class CChecker(Checker):
     
         if alternative is not None:
             
+            # Do not check directly, call __ckeck_indents
+            # __check_if_statement will get called recuresively
             self.__check_indents(indent, alternative)
                 
 
@@ -297,9 +310,11 @@ class CChecker(Checker):
 
         body: Node | None = node.child_by_field_name("body")
         
+        # TODO: rework sanity checks
         if body is None:
             return
         
+        # TODO: rework sanity checks
         if body.prev_sibling is None:
             return
 
@@ -329,9 +344,11 @@ class CChecker(Checker):
 
         body: Node | None = node.child_by_field_name("body")
         
+        # TODO: rework sanity checks
         if body is None:
             return
-        
+
+        # TODO: rework sanity checks
         if body.prev_sibling is None:
             return
 
@@ -513,7 +530,17 @@ class CChecker(Checker):
         self.__check_body(indent, body)
 
     def __check_pointer_declarator(self, node: Node) -> None:
+
+        if self.nuttx_codebase is True:
+            self.style_assert(
+                not bool(re.search(r"(FAR|NEAR|DSEG|CODE)", node.text.decode())),
+                self.error(node.start_point, "Pointer qualifier missing")
+            )
+
         self.style_assert(
-            not bool(re.search(r"^(FAR|NEAR|DSEG|CODE).*$", node.text.decode())),
-            self.error(node.start_point, "Pointer qualifier missing")
+            bool(re.search(r"(?<!\s)\*", node.text.decode())),
+            self.error(node.start_point, "Missing whitespace before pointer")
         )
+
+
+
